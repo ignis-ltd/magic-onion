@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using Grpc.Core;
 using MagicOnion.Server.Diagnostics;
@@ -144,11 +145,67 @@ public abstract class StreamingHubBase<THubInterface, TReceiver> : ServiceBase<T
         return streamingContext.Result();
     }
 
+    #region ForceDisconnect
+    class ConnectionController
+    {
+        public CancellationToken CT { get; set; }
+        public IAsyncStreamReader<byte[]>? Reader { get; set; }
+    }
+
+    private static readonly object disconnectLock = new();
+    private static readonly ConcurrentDictionary<Guid, ConnectionController> connectionControllers = new();
+    private static readonly ConcurrentBag<Guid> disconnectQueue = new();
+    private static Task? disconnectLoop;
+
+    public void ForceDisconnect()
+    {
+        lock (disconnectLock)
+        {
+            if (disconnectLoop == null)
+            {
+                disconnectLoop = DisconnectLoop();
+            }
+        }
+
+        disconnectQueue.Add(ConnectionId);
+    }
+
+    static Task DisconnectLoop()
+    {
+        return Task.Run(async () =>
+        {
+            while (true)
+            {
+                if (disconnectQueue.TryTake(out var guid) && connectionControllers.TryGetValue(guid, out var controller))
+                {
+                    try
+                    {
+                        controller.Reader!.MoveNext(controller.CT).Dispose();
+                    }
+                    catch (Exception ex)
+                    {
+                        throw new InvalidOperationException($"DisconnectLoop EX: {ex} guid: {guid}");
+                    }
+                }
+
+                await Task.Delay(10);
+            }
+        });
+    }
+
+    #endregion
+
     async Task HandleMessageAsync()
     {
         var ct = Context.CallContext.CancellationToken;
         var reader = StreamingServiceContext.RequestStream!;
         var writer = StreamingServiceContext.ResponseStream!;
+
+        var controller = new ConnectionController() { CT = ct, Reader = reader };
+        if (connectionControllers.TryAdd(ConnectionId, controller) == false)
+        {
+            throw new InvalidOperationException("ConnectionControllers Add Fail:" + ConnectionId);
+        }
 
         // Send a hint to the client to start sending messages.
         // The client can read the response headers before any StreamingHub's message.
@@ -212,6 +269,11 @@ public abstract class StreamingHubBase<THubInterface, TReceiver> : ServiceBase<T
                     var methodEndingTimestamp = Stopwatch.GetTimestamp();
                     MagicOnionServerLog.EndInvokeHubMethod(Context.MethodHandler.Logger, context, context.responseSize, context.responseType, StopwatchHelper.GetElapsedTime(methodStartingTimestamp, methodEndingTimestamp).TotalMilliseconds, isErrorOrInterrupted);
                     Metrics.StreamingHubMethodCompleted(Context.Metrics, handler, methodStartingTimestamp, methodEndingTimestamp, isErrorOrInterrupted);
+
+                    if (connectionControllers.TryRemove(ConnectionId, out _) == false)
+                    {
+                        throw new InvalidOperationException("ConnectionControllers Remove Fail:" + ConnectionId);
+                    }
                 }
             }
             else
