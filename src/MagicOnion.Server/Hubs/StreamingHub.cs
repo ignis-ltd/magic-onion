@@ -270,10 +270,7 @@ public abstract class StreamingHubBase<THubInterface, TReceiver> : ServiceBase<T
                     MagicOnionServerLog.EndInvokeHubMethod(Context.MethodHandler.Logger, context, context.responseSize, context.responseType, StopwatchHelper.GetElapsedTime(methodStartingTimestamp, methodEndingTimestamp).TotalMilliseconds, isErrorOrInterrupted);
                     Metrics.StreamingHubMethodCompleted(Context.Metrics, handler, methodStartingTimestamp, methodEndingTimestamp, isErrorOrInterrupted);
 
-                    if (connectionControllers.TryRemove(ConnectionId, out _) == false)
-                    {
-                        throw new InvalidOperationException("ConnectionControllers Remove Fail:" + ConnectionId);
-                    }
+                    connectionControllers.TryRemove(ConnectionId, out _);
                 }
             }
             else
