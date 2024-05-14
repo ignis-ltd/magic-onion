@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: Cysharp/Actions/.github/actions/setup-dotnet@main
       - run: echo "MAGICONION_VERSION=ci-$(date '+%Y%m%d-%H%M%S')+${GITHUB_SHA:0:6}" >> $GITHUB_ENV
       - run: echo "MAGICONION_VERSION=${MAGICONION_VERSION}"
@@ -30,10 +30,11 @@ jobs:
       - run: dotnet build -c ${{ env.BUILD_CONFIG }} ./MagicOnion.sln
       # pack
       - run: dotnet pack -c ${{ env.BUILD_CONFIG }} ./MagicOnion.Packaging.slnf --include-symbols --include-source --no-build -p:VersionSuffix=${MAGICONION_VERSION} -o ./publish
-      - uses: actions/upload-artifact@v1
+      - uses: Cysharp/Actions/.github/actions/upload-artifact@main
         with:
           name: nuget
           path: ./publish/
+          retention-days: 1
 
   canary-push:
     needs: [canary-build]
@@ -42,10 +43,18 @@ jobs:
     env:
       NUGET_CREDENTIALPROVIDER_SESSIONTOKENCACHE_ENABLED: true
     steps:
-      - uses: actions/download-artifact@v2
+      - name: Load secrets
+        id: op-load-secret
+        uses: 1password/load-secrets-action@v2
+        with:
+          export-env: false
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN_PUBLIC }}
+          VSS_NUGET_EXTERNAL_FEED_ENDPOINTS_PUBLIC_CANARY: "op://GitHubActionsPublic/VSS_NUGET_EXTERNAL_FEED_ENDPOINTS_PUBLIC_CANARY/credential"
+      - uses: Cysharp/Actions/.github/actions/download-artifact@main
       # Upload to NuGet
       - run: echo "VSS_NUGET_EXTERNAL_FEED_ENDPOINTS=${FEED_ENDPOINTS}" >> $GITHUB_ENV
         env:
-          FEED_ENDPOINTS: ${{ secrets.VSS_NUGET_EXTERNAL_FEED_ENDPOINTS_PUBLIC_CANARY }}
+          FEED_ENDPOINTS: ${{ steps.op-load-secret.outputs.VSS_NUGET_EXTERNAL_FEED_ENDPOINTS_PUBLIC_CANARY }}
       - run: wget -qO- https://raw.githubusercontent.com/Microsoft/artifacts-credprovider/master/helpers/installcredprovider.sh | bash
       - run: dotnet nuget push "./nuget/*.nupkg" --skip-duplicate -s https://pkgs.dev.azure.com/cysharp/Public/_packaging/Canary-Build/nuget/v2 -k AzureDevOps

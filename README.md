@@ -929,12 +929,7 @@ The recommended structure for a solution using MagicOnion is as follows:
 
 The **Shared** project is a library project with interface definitions like Service or Hub and types of requests/responses, shared between the **Server** and **Client**.
 
-When developing using Unity, shared code can be placed within the Unity project and referenced by source link (`<Compile Include="..." />`) from .NET project, or the library project can be referenced as a Unity package.
-
-It's only necessary that the interface name and member name and types match, so it's not always necessary to reference the same assembly.
-
-For more details on package referencing, please refer to [the source code of the sample project](https://github.com/Cysharp/MagicOnion/tree/master/samples).
-
+When developing using Unity, recommended way is use UPM local file reference. For more details on package referencing, please refer to [the document of the sample project](https://github.com/Cysharp/MagicOnion/tree/main/samples/ChatApp).
 
 # Clients
 
@@ -1030,7 +1025,7 @@ To install using the Unity package manager, please specify the following URL in 
 https://github.com/Cysharp/MagicOnion.git?path=src/MagicOnion.Client.Unity/Assets/Scripts/MagicOnion#{Version}
 ```
 
-> ![NOTE]
+> [!NOTE]
 > Please replace `{Version}` with the version number you want to install (e.g. `6.0.1`).
 
 `MagicOnion.Client.Unity.package` is available for download from [Releases](https://github.com/cysharp/MagicOnion/releases) page of this repository.
@@ -1071,12 +1066,13 @@ Before creating a channel in your application, you need to initialize the provid
 public static void OnRuntimeInitialize()
 {
     // Initialize gRPC channel provider when the application is loaded.
-    GrpcChannelProviderHost.Initialize(new DefaultGrpcChannelProvider(new []
+    GrpcChannelProviderHost.Initialize(new DefaultGrpcChannelProvider(() => new GrpcChannelOptions()
     {
-        // send keepalive ping every 5 second, default is 2 hours
-        new ChannelOption("grpc.keepalive_time_ms", 5000),
-        // keepalive ping time out after 5 seconds, default is 20 seconds
-        new ChannelOption("grpc.keepalive_timeout_ms", 5 * 1000),
+        HttpHandler = new YetAnotherHttpHandler()
+        {
+            Http2Only = true,
+        },
+        DisposeHttpClient = true,
     }));
 }
 ```
