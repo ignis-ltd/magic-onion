@@ -129,18 +129,30 @@ public abstract class StreamingHubBase<THubInterface, TReceiver> : ServiceBase<T
             // NOTE: If DuplexStreaming is disconnected by the client, IOException will be thrown.
             //       However, such behavior is expected. the exception can be ignored.
         }
-        catch (Exception ex) when (ex is IOException or InvalidOperationException)
+        catch (Exception ex) 
         {
-            var httpRequestLifetimeFeature = this.Context.CallContext.GetHttpContext()?.Features.Get<IHttpRequestLifetimeFeature>();
-
-            // NOTE: If the connection is completed when a message is written, PipeWriter throws an InvalidOperationException.
-            // NOTE: If the connection is closed with STREAM_RST, PipeReader throws an IOException.
-            //       However, such behavior is expected. the exception can be ignored.
-            //       https://github.com/dotnet/aspnetcore/blob/v6.0.0/src/Servers/Kestrel/Core/src/Internal/Http2/Http2Stream.cs#L516-L523
-            if (httpRequestLifetimeFeature is null || httpRequestLifetimeFeature.RequestAborted.IsCancellationRequested is false)
+            do
             {
+                if (ex is IOException or InvalidOperationException)
+                {
+                    var httpRequestLifetimeFeature = this.Context.CallContext.GetHttpContext()?.Features.Get<IHttpRequestLifetimeFeature>();
+
+                    // NOTE: If the connection is completed when a message is written, PipeWriter throws an InvalidOperationException.
+                    // NOTE: If the connection is closed with STREAM_RST, PipeReader throws an IOException.
+                    //       However, such behavior is expected. the exception can be ignored.
+                    //       https://github.com/dotnet/aspnetcore/blob/v6.0.0/src/Servers/Kestrel/Core/src/Internal/Http2/Http2Stream.cs#L516-L523
+                    if (httpRequestLifetimeFeature is null || httpRequestLifetimeFeature.RequestAborted.IsCancellationRequested is false)
+                    {
+                        if (ex is InvalidOperationException && ex.Message.Contains("Concurrent reads or writes are not supported"))
+                        {
+                            //ForceDisconnectで発生するの無視
+                            break;
+                        }
+                    }
+                }
                 throw;
             }
+            while (false);
         }
         finally
         {
@@ -163,7 +175,7 @@ public abstract class StreamingHubBase<THubInterface, TReceiver> : ServiceBase<T
 
     private static readonly object disconnectLock = new();
     private static readonly ConcurrentDictionary<Guid, ConnectionController> connectionControllers = new();
-    private static readonly ConcurrentBag<Guid> disconnectQueue = new();
+    private static readonly ConcurrentQueue<Guid> disconnectQueue = new();
     private static Task? disconnectLoop;
 
     public void ForceDisconnect()
@@ -176,7 +188,7 @@ public abstract class StreamingHubBase<THubInterface, TReceiver> : ServiceBase<T
             }
         }
 
-        disconnectQueue.Add(ConnectionId);
+        disconnectQueue.Enqueue(ConnectionId);
     }
 
     static Task DisconnectLoop()
@@ -185,7 +197,7 @@ public abstract class StreamingHubBase<THubInterface, TReceiver> : ServiceBase<T
         {
             while (true)
             {
-                if (disconnectQueue.TryTake(out var guid) && connectionControllers.TryGetValue(guid, out var controller))
+                if (disconnectQueue.TryDequeue(out var guid) && connectionControllers.TryRemove(guid, out var controller))
                 {
                     try
                     {
@@ -193,7 +205,7 @@ public abstract class StreamingHubBase<THubInterface, TReceiver> : ServiceBase<T
                     }
                     catch (Exception ex)
                     {
-                        throw new InvalidOperationException($"DisconnectLoop EX: {ex} guid: {guid}");
+                        // ForceDisconnectで発生するの無視
                     }
                 }
 
@@ -283,8 +295,6 @@ public abstract class StreamingHubBase<THubInterface, TReceiver> : ServiceBase<T
                     var methodEndingTimestamp = Stopwatch.GetTimestamp();
                     MagicOnionServerLog.EndInvokeHubMethod(Context.MethodHandler.Logger, context, context.responseSize, context.responseType, StopwatchHelper.GetElapsedTime(methodStartingTimestamp, methodEndingTimestamp).TotalMilliseconds, isErrorOrInterrupted);
                     Metrics.StreamingHubMethodCompleted(Context.Metrics, handler, methodStartingTimestamp, methodEndingTimestamp, isErrorOrInterrupted);
-
-                    connectionControllers.TryRemove(ConnectionId, out _);
                 }
             }
             else
@@ -292,6 +302,8 @@ public abstract class StreamingHubBase<THubInterface, TReceiver> : ServiceBase<T
                 throw new InvalidOperationException("Handler not found in received methodId, methodId:" + methodId);
             }
         }
+
+        connectionControllers.TryRemove(ConnectionId, out _);
     }
 
     static (int methodId, int messageId, int offset) FetchHeader(byte[] msgData)
