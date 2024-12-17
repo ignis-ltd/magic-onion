@@ -129,30 +129,19 @@ public abstract class StreamingHubBase<THubInterface, TReceiver> : ServiceBase<T
             // NOTE: If DuplexStreaming is disconnected by the client, IOException will be thrown.
             //       However, such behavior is expected. the exception can be ignored.
         }
-        catch (Exception ex) 
+        catch (Exception ex) when (ex is IOException or InvalidOperationException)
         {
-            do
-            {
-                if (ex is IOException or InvalidOperationException)
-                {
-                    var httpRequestLifetimeFeature = this.Context.CallContext.GetHttpContext()?.Features.Get<IHttpRequestLifetimeFeature>();
+            var httpRequestLifetimeFeature = this.Context.CallContext.GetHttpContext()?.Features.Get<IHttpRequestLifetimeFeature>();
 
-                    // NOTE: If the connection is completed when a message is written, PipeWriter throws an InvalidOperationException.
-                    // NOTE: If the connection is closed with STREAM_RST, PipeReader throws an IOException.
-                    //       However, such behavior is expected. the exception can be ignored.
-                    //       https://github.com/dotnet/aspnetcore/blob/v6.0.0/src/Servers/Kestrel/Core/src/Internal/Http2/Http2Stream.cs#L516-L523
-                    if (httpRequestLifetimeFeature is null || httpRequestLifetimeFeature.RequestAborted.IsCancellationRequested is false)
-                    {
-                        if (ex is InvalidOperationException && ex.Message.Contains("Concurrent reads or writes are not supported"))
-                        {
-                            //ForceDisconnectで発生するの無視
-                            break;
-                        }
-                    }
-                }
-                throw;
+            // NOTE: If the connection is completed when a message is written, PipeWriter throws an InvalidOperationException.
+            // NOTE: If the connection is closed with STREAM_RST, PipeReader throws an IOException.
+            //       However, such behavior is expected. the exception can be ignored.
+            //       https://github.com/dotnet/aspnetcore/blob/v6.0.0/src/Servers/Kestrel/Core/src/Internal/Http2/Http2Stream.cs#L516-L523
+            if (httpRequestLifetimeFeature is null || httpRequestLifetimeFeature.RequestAborted.IsCancellationRequested is false)
+            {
+                //切断時出て、正常な状況なので、ログ出力しないようにする
+                //throw;
             }
-            while (false);
         }
         finally
         {
