@@ -149,6 +149,7 @@ public abstract class StreamingHubBase<THubInterface, TReceiver> : ServiceBase<T
 
             StreamingServiceContext.CompleteStreamingHub();
             await OnDisconnected();
+            connectionControllers.TryRemove(ConnectionId, out _);
             await this.Group.DisposeAsync();
         }
 
@@ -166,6 +167,11 @@ public abstract class StreamingHubBase<THubInterface, TReceiver> : ServiceBase<T
     private static readonly ConcurrentDictionary<Guid, ConnectionController> connectionControllers = new();
     private static readonly ConcurrentQueue<Guid> disconnectQueue = new();
     private static Task? disconnectLoop;
+
+    public static bool ConnectionControllerExists(Guid? connectionId)
+    {
+        return connectionId.HasValue && connectionControllers.ContainsKey(connectionId.Value);
+    }
 
     public void ForceDisconnect()
     {
@@ -211,12 +217,6 @@ public abstract class StreamingHubBase<THubInterface, TReceiver> : ServiceBase<T
         var reader = StreamingServiceContext.RequestStream!;
         var writer = StreamingServiceContext.ResponseStream!;
 
-        var controller = new ConnectionController() { CT = ct, Reader = reader };
-        if (connectionControllers.TryAdd(ConnectionId, controller) == false)
-        {
-            throw new InvalidOperationException("ConnectionControllers Add Fail:" + ConnectionId);
-        }
-
         // Send a hint to the client to start sending messages.
         // The client can read the response headers before any StreamingHub's message.
         await Context.CallContext.WriteResponseHeadersAsync(ResponseHeaders);
@@ -229,6 +229,11 @@ public abstract class StreamingHubBase<THubInterface, TReceiver> : ServiceBase<T
         // The server can send messages or broadcast to client after OnConnected.
         // eg: Send the current game state to the client.
         await OnConnected();
+        var controller = new ConnectionController() { CT = ct, Reader = reader };
+        if (connectionControllers.TryAdd(ConnectionId, controller) == false)
+        {
+            throw new InvalidOperationException("ConnectionControllers Add Fail:" + ConnectionId);
+        }
 
         var handlers = StreamingHubHandlerRepository.GetHandlers(Context.MethodHandler);
 
@@ -291,8 +296,6 @@ public abstract class StreamingHubBase<THubInterface, TReceiver> : ServiceBase<T
                 throw new InvalidOperationException("Handler not found in received methodId, methodId:" + methodId);
             }
         }
-
-        connectionControllers.TryRemove(ConnectionId, out _);
     }
 
     static (int methodId, int messageId, int offset) FetchHeader(byte[] msgData)
