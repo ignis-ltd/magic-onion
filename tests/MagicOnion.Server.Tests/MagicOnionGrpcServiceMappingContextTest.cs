@@ -33,6 +33,7 @@ public class MagicOnionGrpcServiceMappingContextTest
         var builder = WebApplication.CreateBuilder();
         builder.Services.AddMagicOnion();
         var app = builder.Build();
+        app.MapMagicOnionService();
 
         // Act
         var ex = Record.Exception(() => app.MapMagicOnionService([typeof(GreeterService), typeof(GreeterHub)]));
@@ -47,7 +48,8 @@ public class MagicOnionGrpcServiceMappingContextTest
         // Arrange
         var builder = WebApplication.CreateBuilder();
         builder.Services.AddMagicOnion();
-        var app = builder.Build();
+        var app = builder.Build(); 
+        app.MapMagicOnionService();
 
         // Act
         var ex = Record.Exception(() => app.MapMagicOnionService([typeof(object)]));
@@ -63,7 +65,8 @@ public class MagicOnionGrpcServiceMappingContextTest
         // Arrange
         var builder = WebApplication.CreateBuilder();
         builder.Services.AddMagicOnion();
-        var app = builder.Build();
+        var app = builder.Build(); 
+        app.MapMagicOnionService();
         var routeBuilder = new TestEndpointRouteBuilder(app.Services);
 
         // Act
@@ -81,7 +84,8 @@ public class MagicOnionGrpcServiceMappingContextTest
         // Arrange
         var builder = WebApplication.CreateBuilder();
         builder.Services.AddMagicOnion();
-        var app = builder.Build();
+        var app = builder.Build(); 
+        app.MapMagicOnionService();
         var routeBuilder = new TestEndpointRouteBuilder(app.Services);
 
         // Act
@@ -98,7 +102,8 @@ public class MagicOnionGrpcServiceMappingContextTest
         // Arrange
         var builder = WebApplication.CreateBuilder();
         builder.Services.AddMagicOnion();
-        var app = builder.Build();
+        var app = builder.Build(); 
+        app.MapMagicOnionService();
         var routeBuilder = new TestEndpointRouteBuilder(app.Services);
 
         // Act
@@ -121,7 +126,8 @@ public class MagicOnionGrpcServiceMappingContextTest
         // Arrange
         var builder = WebApplication.CreateBuilder();
         builder.Services.AddMagicOnion();
-        var app = builder.Build();
+        var app = builder.Build(); 
+        app.MapMagicOnionService();
         var routeBuilder = new TestEndpointRouteBuilder(app.Services);
 
         // Act

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Immutable;
 using Cysharp.Runtime.Multicast;
 
@@ -8,6 +8,7 @@ public interface IGroup<T> : IMulticastGroup<Guid, T>
 {
     ValueTask RemoveAsync(ServiceContext context);
     ValueTask<int> CountAsync();
+    string GroupName => (this as Group<T>)?.Name ?? "unknown";
 }
 
 internal class Group<T> : IGroup<T>

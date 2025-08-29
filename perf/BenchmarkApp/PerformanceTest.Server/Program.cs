@@ -36,6 +36,7 @@ builder.Services.AddHostedService<StartupService>();
 builder.Services.AddHostedService<ProfileService>();
 
 var app = builder.Build();
+app.MapMagicOnionService();
 
 // Configure the HTTP request pipeline.
 app.MapMagicOnionService();
