@@ -161,9 +161,9 @@ public abstract class StreamingHubBase<THubInterface, TReceiver> : ServiceBase<T
             heartbeatHandle.Dispose();
             remoteClientResultPendingTasks.Dispose();
 
-            //await OnDisconnected();
-            //connectionControllers.TryRemove(ConnectionId, out _);
-            //await this.Group.DisposeAsync();
+            await OnDisconnected();
+            connectionControllers.TryRemove(ConnectionId, out _);
+            await this.Group.DisposeAsync();
         }
 
         return default;
@@ -185,7 +185,7 @@ public abstract class StreamingHubBase<THubInterface, TReceiver> : ServiceBase<T
     class ConnectionController
     {
         public CancellationToken CT { get; set; }
-        public IAsyncStreamReader<byte[]>? Reader { get; set; }
+        public IAsyncStreamReader<StreamingHubPayload>? Reader { get; set; }
     }
 
     private static readonly object disconnectLock = new();
