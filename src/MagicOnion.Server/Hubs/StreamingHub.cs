@@ -1,6 +1,8 @@
 ﻿using System.Buffers;
 using System.Threading.Channels;
 using Cysharp.Runtime.Multicast.Remoting;
+using System.Collections.Concurrent;
+using System.Diagnostics;
 using Grpc.Core;
 using MagicOnion.Internal;
 using MagicOnion.Internal.Buffers;
@@ -135,7 +137,8 @@ public abstract class StreamingHubBase<THubInterface, TReceiver> : ServiceBase<T
             //       https://github.com/dotnet/aspnetcore/blob/v6.0.0/src/Servers/Kestrel/Core/src/Internal/Http2/Http2Stream.cs#L516-L523
             if (httpRequestLifetimeFeature is null || httpRequestLifetimeFeature.RequestAborted.IsCancellationRequested is false)
             {
-                throw;
+                //切断時出て、正常な状況なので、ログ出力しないようにする
+                //throw;
             }
         }
         finally
@@ -157,6 +160,10 @@ public abstract class StreamingHubBase<THubInterface, TReceiver> : ServiceBase<T
 
             heartbeatHandle.Dispose();
             remoteClientResultPendingTasks.Dispose();
+
+            //await OnDisconnected();
+            //connectionControllers.TryRemove(ConnectionId, out _);
+            //await this.Group.DisposeAsync();
         }
 
         return default;
@@ -173,6 +180,61 @@ public abstract class StreamingHubBase<THubInterface, TReceiver> : ServiceBase<T
             }
         }
     }
+
+    #region ForceDisconnect
+    class ConnectionController
+    {
+        public CancellationToken CT { get; set; }
+        public IAsyncStreamReader<byte[]>? Reader { get; set; }
+    }
+
+    private static readonly object disconnectLock = new();
+    private static readonly ConcurrentDictionary<Guid, ConnectionController> connectionControllers = new();
+    private static readonly ConcurrentQueue<Guid> disconnectQueue = new();
+    private static Task? disconnectLoop;
+
+    public static bool ConnectionControllerExists(Guid? connectionId)
+    {
+        return connectionId.HasValue && connectionControllers.ContainsKey(connectionId.Value);
+    }
+
+    public void ForceDisconnect()
+    {
+        lock (disconnectLock)
+        {
+            if (disconnectLoop == null)
+            {
+                disconnectLoop = DisconnectLoop();
+            }
+        }
+
+        disconnectQueue.Enqueue(ConnectionId);
+    }
+
+    static Task DisconnectLoop()
+    {
+        return Task.Run(async () =>
+        {
+            while (true)
+            {
+                if (disconnectQueue.TryDequeue(out var guid) && connectionControllers.TryRemove(guid, out var controller))
+                {
+                    try
+                    {
+                        controller.Reader!.MoveNext(controller.CT).Dispose();
+                    }
+                    catch (Exception ex)
+                    {
+                        // ForceDisconnectで発生するの無視
+                    }
+                }
+
+                await Task.Delay(10);
+            }
+        });
+    }
+
+    #endregion
 
     async Task HandleMessageAsync()
     {
@@ -192,6 +254,11 @@ public abstract class StreamingHubBase<THubInterface, TReceiver> : ServiceBase<T
         // The server can send messages or broadcast to client after OnConnected.
         // eg: Send the current game state to the client.
         await OnConnected();
+        var controller = new ConnectionController() { CT = ct, Reader = reader };
+        if (connectionControllers.TryAdd(ConnectionId, controller) == false)
+        {
+            throw new InvalidOperationException("ConnectionControllers Add Fail:" + ConnectionId);
+        }
 
         // Starts a loop that consumes the request queue.
         consumingRequestQueueTask = ConsumeRequestQueueAsync(ct);
